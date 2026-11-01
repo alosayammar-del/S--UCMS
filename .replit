@@ -1,6 +1,32 @@
-[nix]
-channel = "stable-25_05"
-packages = ["php82", "nano"]
+run = "bash -lc 'PORT=5000; exec php -S 0.0.0.0:$PORT -t .'"
 
-[agent]
-expertMode = true
+[nix]
+packages = ["php"]
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Start application"
+
+[[workflows.workflow]]
+name = "Start application"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "bash -lc 'PORT=5000; exec php -S 0.0.0.0:$PORT -t .'"
+waitForPort = 5000
+
+[workflows.workflow.metadata]
+outputType = "webview"

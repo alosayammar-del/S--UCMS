@@ -1,6 +1,7 @@
-
 <?php
 session_start();
+
+require_once __DIR__ . '/config/database.php';
 
 if (isset($_SESSION['user_id'])) {
     header('Location: dashboard.php');
@@ -17,7 +18,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($email === '' || $password === '') {
         $error = 'يرجى إدخال البريد الإلكتروني وكلمة المرور.';
     } else {
-        $error = 'لم يتم تفعيل تسجيل الدخول بعد. سيتم ربط الحسابات بقاعدة البيانات في المرحلة التالية.';
+        $stmt = $pdo->prepare(
+            "SELECT id, full_name, email, password_hash, role, status
+             FROM users
+             WHERE email = ?
+             LIMIT 1"
+        );
+
+        $stmt->execute([$email]);
+        $user = $stmt->fetch();
+
+        if (!$user || !password_verify($password, $user['password_hash'])) {
+            $error = 'البريد الإلكتروني أو كلمة المرور غير صحيحة.';
+        } elseif ($user['status'] !== 'active') {
+            $error = 'هذا الحساب غير نشط، يرجى التواصل مع إدارة النظام.';
+        } else {
+            session_regenerate_id(true);
+
+            $_SESSION['user_id'] = $user['id'];
+            $_SESSION['full_name'] = $user['full_name'];
+            $_SESSION['email'] = $user['email'];
+            $_SESSION['role'] = $user['role'];
+
+            header('Location: dashboard.php');
+            exit;
+        }
     }
 }
 ?>
