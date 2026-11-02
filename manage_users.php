@@ -51,6 +51,24 @@ $statusLabels = [
     'suspended' => 'موقوف'
 ];
 
+$editId = filter_var($_GET['edit'] ?? null, FILTER_VALIDATE_INT);
+$editAccount = null;
+
+if ($editId && $editId !== $userId) {
+    $editQuery = $pdo->prepare(
+        "SELECT u.id, u.full_name, u.email, u.phone, u.role,
+                s.student_number, s.department AS student_department, s.academic_level,
+                f.employee_number, f.department AS faculty_department, f.academic_title
+         FROM users u
+         LEFT JOIN students s ON s.user_id = u.id
+         LEFT JOIN faculty_members f ON f.user_id = u.id
+         WHERE u.id = ? AND u.role <> 'administrator'
+         LIMIT 1"
+    );
+    $editQuery->execute([$editId]);
+    $editAccount = $editQuery->fetch() ?: null;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $csrfToken = $_POST['csrf_token'] ?? '';
 
@@ -188,6 +206,77 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     error_log($e->getMessage());
                     $error = 'حدث خطأ أثناء إنشاء الحساب.';
+                }
+            }
+        } elseif ($action === 'update_profile') {
+            $targetId = filter_var($_POST['user_id'] ?? null, FILTER_VALIDATE_INT);
+            $fullName = trim($_POST['full_name'] ?? '');
+            $email = strtolower(trim($_POST['email'] ?? ''));
+            $phone = trim($_POST['phone'] ?? '');
+            $studentNumber = trim($_POST['student_number'] ?? '');
+            $studentDepartment = trim($_POST['student_department'] ?? '');
+            $academicLevel = trim($_POST['academic_level'] ?? '');
+            $employeeNumber = trim($_POST['employee_number'] ?? '');
+            $facultyDepartment = trim($_POST['faculty_department'] ?? '');
+            $academicTitle = trim($_POST['academic_title'] ?? '');
+
+            if (!$targetId || $targetId === $userId || $fullName === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $error = 'بيانات الحساب غير مكتملة أو غير صالحة.';
+            } elseif (mb_strlen($fullName, 'UTF-8') > 150 || strlen($email) > 150 || ($phone !== '' && strlen($phone) > 20)) {
+                $error = 'تجاوز أحد الحقول الحد المسموح.';
+            } else {
+                try {
+                    $targetQuery = $pdo->prepare("SELECT id, role FROM users WHERE id = ? LIMIT 1");
+                    $targetQuery->execute([$targetId]);
+                    $target = $targetQuery->fetch();
+
+                    if (!$target || $target['role'] === 'administrator') {
+                        $error = 'الحساب المطلوب غير موجود أو لا يمكن تعديله.';
+                    } else {
+                        $emailCheck = $pdo->prepare("SELECT id FROM users WHERE email = ? AND id <> ? LIMIT 1");
+                        $emailCheck->execute([$email, $targetId]);
+
+                        if ($emailCheck->fetch()) {
+                            $error = 'البريد الإلكتروني مستخدم في حساب آخر.';
+                        } elseif ($target['role'] === 'student' && $studentNumber === '') {
+                            $error = 'يرجى إدخال الرقم الجامعي.';
+                        } elseif ($target['role'] === 'faculty' && $employeeNumber === '') {
+                            $error = 'يرجى إدخال الرقم الوظيفي.';
+                        } else {
+                            $pdo->beginTransaction();
+                            $updateUser = $pdo->prepare("UPDATE users SET full_name = ?, email = ?, phone = ? WHERE id = ?");
+                            $updateUser->execute([$fullName, $email, $phone !== '' ? $phone : null, $targetId]);
+
+                            if ($target['role'] === 'student') {
+                                $numberCheck = $pdo->prepare("SELECT user_id FROM students WHERE student_number = ? AND user_id <> ? LIMIT 1");
+                                $numberCheck->execute([$studentNumber, $targetId]);
+                                if ($numberCheck->fetch()) {
+                                    throw new RuntimeException('الرقم الجامعي مستخدم في حساب طالب آخر.');
+                                }
+                                $profile = $pdo->prepare("UPDATE students SET student_number = ?, department = ?, academic_level = ? WHERE user_id = ?");
+                                $profile->execute([$studentNumber, $studentDepartment !== '' ? $studentDepartment : null, $academicLevel !== '' ? $academicLevel : null, $targetId]);
+                            } elseif ($target['role'] === 'faculty') {
+                                $numberCheck = $pdo->prepare("SELECT user_id FROM faculty_members WHERE employee_number = ? AND user_id <> ? LIMIT 1");
+                                $numberCheck->execute([$employeeNumber, $targetId]);
+                                if ($numberCheck->fetch()) {
+                                    throw new RuntimeException('الرقم الوظيفي مستخدم في حساب آخر.');
+                                }
+                                $profile = $pdo->prepare("UPDATE faculty_members SET employee_number = ?, department = ?, academic_title = ? WHERE user_id = ?");
+                                $profile->execute([$employeeNumber, $facultyDepartment !== '' ? $facultyDepartment : null, $academicTitle !== '' ? $academicTitle : null, $targetId]);
+                            }
+
+                            $pdo->commit();
+                            $success = 'تم تحديث بيانات الحساب بنجاح.';
+                            $_SESSION['users_csrf'] = bin2hex(random_bytes(32));
+                        }
+                    }
+                } catch (RuntimeException $e) {
+                    if ($pdo->inTransaction()) $pdo->rollBack();
+                    $error = $e->getMessage();
+                } catch (PDOException $e) {
+                    if ($pdo->inTransaction()) $pdo->rollBack();
+                    error_log($e->getMessage());
+                    $error = 'تعذر تحديث الحساب. تحقق من عدم تكرار البيانات.';
                 }
             }
         } elseif ($action === 'update_status') {
@@ -923,6 +1012,60 @@ td {
     </div>
 </section>
 
+<?php if ($editAccount): ?>
+<h2 class="section-title">تعديل بيانات الحساب</h2>
+<section class="panel">
+<form method="POST" action="manage_users.php" class="form-grid">
+    <input type="hidden" name="csrf_token" value="<?= e($_SESSION['users_csrf']) ?>">
+    <input type="hidden" name="action" value="update_profile">
+    <input type="hidden" name="user_id" value="<?= (int) $editAccount['id'] ?>">
+    <div class="form-group">
+        <label for="edit_full_name">الاسم الكامل</label>
+        <input id="edit_full_name" name="full_name" maxlength="150" required value="<?= e($editAccount['full_name']) ?>">
+    </div>
+    <div class="form-group">
+        <label for="edit_email">البريد الإلكتروني</label>
+        <input type="email" id="edit_email" name="email" maxlength="150" required value="<?= e($editAccount['email']) ?>">
+    </div>
+    <div class="form-group">
+        <label for="edit_phone">رقم الهاتف</label>
+        <input id="edit_phone" name="phone" maxlength="20" value="<?= e($editAccount['phone'] ?? '') ?>">
+    </div>
+    <?php if ($editAccount['role'] === 'student'): ?>
+    <div class="form-group">
+        <label for="edit_student_number">الرقم الجامعي</label>
+        <input id="edit_student_number" name="student_number" maxlength="50" required value="<?= e($editAccount['student_number'] ?? '') ?>">
+    </div>
+    <div class="form-group">
+        <label for="edit_student_department">القسم</label>
+        <input id="edit_student_department" name="student_department" maxlength="100" value="<?= e($editAccount['student_department'] ?? '') ?>">
+    </div>
+    <div class="form-group">
+        <label for="edit_academic_level">المستوى الأكاديمي</label>
+        <input id="edit_academic_level" name="academic_level" maxlength="50" value="<?= e($editAccount['academic_level'] ?? '') ?>">
+    </div>
+    <?php elseif ($editAccount['role'] === 'faculty'): ?>
+    <div class="form-group">
+        <label for="edit_employee_number">الرقم الوظيفي</label>
+        <input id="edit_employee_number" name="employee_number" maxlength="50" required value="<?= e($editAccount['employee_number'] ?? '') ?>">
+    </div>
+    <div class="form-group">
+        <label for="edit_faculty_department">القسم</label>
+        <input id="edit_faculty_department" name="faculty_department" maxlength="100" value="<?= e($editAccount['faculty_department'] ?? '') ?>">
+    </div>
+    <div class="form-group">
+        <label for="edit_academic_title">اللقب الأكاديمي</label>
+        <input id="edit_academic_title" name="academic_title" maxlength="100" value="<?= e($editAccount['academic_title'] ?? '') ?>">
+    </div>
+    <?php endif; ?>
+    <div class="full-width">
+        <button type="submit" class="primary-button">حفظ التعديلات</button>
+        <a href="manage_users.php" class="back-link">إلغاء</a>
+    </div>
+</form>
+</section>
+<?php endif; ?>
+
 <h2 class="section-title">إنشاء حساب جديد</h2>
 
 <section class="panel">
@@ -1098,6 +1241,8 @@ td {
         <td>
 
         <?php if ($account['role'] !== 'administrator' && (int) $account['id'] !== $userId): ?>
+
+            <a class="back-link" href="manage_users.php?edit=<?= (int) $account['id'] ?>">تعديل</a>
 
             <form method="POST" action="manage_users.php" class="action-form">
 

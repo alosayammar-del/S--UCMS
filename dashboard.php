@@ -29,6 +29,52 @@ if (!isset($roles[$role])) {
 
 $roleName = $roles[$role];
 
+$studentSchedule = [];
+
+if ($role === 'student') {
+    try {
+        $scheduleStmt = $pdo->prepare(
+            "SELECT
+                c.course_code,
+                c.course_name,
+                u.full_name AS faculty_name,
+                cl.room_code,
+                cl.building,
+                s.day_of_week,
+                s.start_time,
+                s.end_time,
+                s.semester,
+                e.academic_year AS academic_year
+             FROM enrollments e
+             INNER JOIN courses c ON c.id = e.course_id
+             INNER JOIN schedules s
+                ON s.course_id = e.course_id
+                AND s.semester = e.semester
+                AND (
+                    s.academic_year = e.academic_year
+                    OR s.academic_year = CONCAT(
+                        SUBSTRING_INDEX(e.academic_year, '-', -1),
+                        '-',
+                        SUBSTRING_INDEX(e.academic_year, '-', 1)
+                    )
+                )
+             INNER JOIN users u ON u.id = s.faculty_user_id
+             INNER JOIN classrooms cl ON cl.id = s.classroom_id
+             WHERE e.student_id = ?
+               AND e.status = 'enrolled'
+             ORDER BY
+                FIELD(s.day_of_week, 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'),
+                s.start_time"
+        );
+        $scheduleStmt->execute([$userId]);
+        $studentSchedule = $scheduleStmt->fetchAll();
+    } catch (PDOException $e) {
+        error_log($e->getMessage());
+        $studentSchedule = [];
+    }
+}
+
+
 $stmt = $pdo->prepare(
     "SELECT id, full_name, email, role, status
      FROM users
@@ -531,6 +577,60 @@ button {
     line-height: 1.9;
 }
 
+
+.student-schedule {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 13px;
+    padding: 20px;
+    margin-top: 25px;
+}
+
+.student-schedule .schedule-scroll {
+    width: 100%;
+    overflow-x: auto;
+}
+
+.schedule-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 680px;
+    text-align: right;
+}
+
+.schedule-table th,
+.schedule-table td {
+    padding: 12px 10px;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.schedule-table th {
+    color: var(--navy);
+    background: #f5f8fb;
+    font-weight: 800;
+}
+
+.schedule-table td {
+    color: var(--text);
+}
+
+.schedule-empty {
+    color: var(--muted);
+    background: #f7f9fc;
+    border-radius: 9px;
+    padding: 16px;
+    font-size: 11px;
+    line-height: 2;
+}
+
+.schedule-term {
+    color: var(--muted);
+    font-size: 10px;
+    margin: -7px 0 15px;
+}
+
 .profile-card {
     background: white;
     border: 1px solid var(--border);
@@ -751,6 +851,63 @@ button {
                 </div>
                 <div class="welcome-symbol">U</div>
             </section>
+
+            <?php if ($role === 'student'): ?>
+                <section class="student-schedule" id="student-schedule">
+                    <div class="section-heading" style="margin-top: 0;">
+                        <h2>الجدول الدراسي</h2>
+                        <span><?= count($studentSchedule) ?> محاضرات</span>
+                    </div>
+
+                    <?php if (!empty($studentSchedule)): ?>
+                        <div class="schedule-term">
+                            <?= htmlspecialchars($studentSchedule[0]['semester'], ENT_QUOTES, 'UTF-8') ?>
+                            -
+                            <?= htmlspecialchars($studentSchedule[0]['academic_year'], ENT_QUOTES, 'UTF-8') ?>
+                        </div>
+
+                        <div class="schedule-scroll">
+                            <table class="schedule-table">
+                                <thead>
+                                    <tr>
+                                        <th>المقرر</th>
+                                        <th>عضو هيئة التدريس</th>
+                                        <th>اليوم</th>
+                                        <th>من</th>
+                                        <th>إلى</th>
+                                        <th>القاعة</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($studentSchedule as $lesson): ?>
+                                        <tr>
+                                            <td>
+                                                <?= htmlspecialchars($lesson['course_code'], ENT_QUOTES, 'UTF-8') ?>
+                                                -
+                                                <?= htmlspecialchars($lesson['course_name'], ENT_QUOTES, 'UTF-8') ?>
+                                            </td>
+                                            <td><?= htmlspecialchars($lesson['faculty_name'], ENT_QUOTES, 'UTF-8') ?></td>
+                                            <td><?= htmlspecialchars($lesson['day_of_week'], ENT_QUOTES, 'UTF-8') ?></td>
+                                            <td><?= htmlspecialchars(substr($lesson['start_time'], 0, 5), ENT_QUOTES, 'UTF-8') ?></td>
+                                            <td><?= htmlspecialchars(substr($lesson['end_time'], 0, 5), ENT_QUOTES, 'UTF-8') ?></td>
+                                            <td>
+                                                <?= htmlspecialchars($lesson['room_code'], ENT_QUOTES, 'UTF-8') ?>
+                                                <?php if (!empty($lesson['building'])): ?>
+                                                    - <?= htmlspecialchars($lesson['building'], ENT_QUOTES, 'UTF-8') ?>
+                                                <?php endif; ?>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    <?php else: ?>
+                        <div class="schedule-empty">
+                            لا يوجد جدول دراسي لعرضه حاليا. تأكد من تسجيلك في المقرر وربط المقرر بجدول دراسي للفصل نفسه.
+                        </div>
+                    <?php endif; ?>
+                </section>
+            <?php endif; ?>
 
             <?php if ($role === 'administrator'): ?>
 
