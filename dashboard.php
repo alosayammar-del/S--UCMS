@@ -29,52 +29,6 @@ if (!isset($roles[$role])) {
 
 $roleName = $roles[$role];
 
-$studentSchedule = [];
-
-if ($role === 'student') {
-    try {
-        $scheduleStmt = $pdo->prepare(
-            "SELECT
-                c.course_code,
-                c.course_name,
-                u.full_name AS faculty_name,
-                cl.room_code,
-                cl.building,
-                s.day_of_week,
-                s.start_time,
-                s.end_time,
-                s.semester,
-                e.academic_year AS academic_year
-             FROM enrollments e
-             INNER JOIN courses c ON c.id = e.course_id
-             INNER JOIN schedules s
-                ON s.course_id = e.course_id
-                AND s.semester = e.semester
-                AND (
-                    s.academic_year = e.academic_year
-                    OR s.academic_year = CONCAT(
-                        SUBSTRING_INDEX(e.academic_year, '-', -1),
-                        '-',
-                        SUBSTRING_INDEX(e.academic_year, '-', 1)
-                    )
-                )
-             INNER JOIN users u ON u.id = s.faculty_user_id
-             INNER JOIN classrooms cl ON cl.id = s.classroom_id
-             WHERE e.student_id = ?
-               AND e.status = 'enrolled'
-             ORDER BY
-                FIELD(s.day_of_week, 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'),
-                s.start_time"
-        );
-        $scheduleStmt->execute([$userId]);
-        $studentSchedule = $scheduleStmt->fetchAll();
-    } catch (PDOException $e) {
-        error_log($e->getMessage());
-        $studentSchedule = [];
-    }
-}
-
-
 $stmt = $pdo->prepare(
     "SELECT id, full_name, email, role, status
      FROM users
@@ -114,6 +68,53 @@ if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 
+$studentSchedule = [];
+
+if ($role === 'student') {
+    try {
+        $scheduleStmt = $pdo->prepare(
+            "SELECT
+                c.course_code,
+                c.course_name,
+                u.full_name AS faculty_name,
+                cl.room_code,
+                cl.building,
+                s.day_of_week,
+                s.start_time,
+                s.end_time,
+                s.semester,
+                e.academic_year AS academic_year
+             FROM enrollments e
+             INNER JOIN courses c ON c.id = e.course_id
+             INNER JOIN schedules s
+                ON s.course_id = e.course_id
+                AND s.semester = e.semester
+                AND (
+                    s.academic_year = e.academic_year
+                    OR s.academic_year = CONCAT(
+                        SUBSTRING_INDEX(e.academic_year, '-', -1),
+                        '-',
+                        SUBSTRING_INDEX(e.academic_year, '-', 1)
+                    )
+                )
+             INNER JOIN users u ON u.id = s.faculty_user_id
+             INNER JOIN classrooms cl ON cl.id = s.classroom_id
+             WHERE e.student_id = ?
+               AND e.status = 'enrolled'
+             ORDER BY
+                FIELD(s.day_of_week, 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'),
+                s.start_time"
+        );
+
+        $scheduleStmt->execute([$userId]);
+        $studentSchedule = $scheduleStmt->fetchAll();
+
+    } catch (PDOException $e) {
+        error_log($e->getMessage());
+        $studentSchedule = [];
+    }
+}
+
 $stats = [
     'students' => 0,
     'faculty' => 0,
@@ -151,52 +152,176 @@ if ($role === 'administrator') {
 }
 
 $dashboardContent = [
+
     'student' => [
         'title' => 'بوابة الطالب',
         'description' => 'تابع مسيرتك الأكاديمية وخدماتك الجامعية من مكان واحد.',
         'items' => [
-            ['icon' => '▦', 'title' => 'المقررات الدراسية', 'description' => 'متابعة المقررات المسجل بها'],
-            ['icon' => '◷', 'title' => 'الجدول الدراسي', 'description' => 'عرض مواعيد المحاضرات'],
-            ['icon' => '▤', 'title' => 'الدرجات والتقييمات', 'description' => 'متابعة نتائجك الأكاديمية'],
-            ['icon' => '✓', 'title' => 'الحضور والغياب', 'description' => 'متابعة سجل الحضور'],
-            ['icon' => '✉', 'title' => 'الطلبات الجامعية', 'description' => 'متابعة طلباتك الجامعية'],
-            ['icon' => '♧', 'title' => 'التنبيهات الأكاديمية', 'description' => 'عرض التنبيهات والإشعارات']
+            [
+                'icon' => '▦',
+                'title' => 'المقررات الدراسية',
+                'description' => 'متابعة المقررات المسجل بها',
+                'url' => 'student_courses.php'
+            ],
+            [
+                'icon' => '◷',
+                'title' => 'الجدول الدراسي',
+                'description' => 'عرض مواعيد المحاضرات',
+                'url' => '#student-schedule'
+            ],
+            [
+                'icon' => '▤',
+                'title' => 'الدرجات والتقييمات',
+                'description' => 'متابعة نتائجك الأكاديمية',
+                'url' => 'student_grades.php'
+            ],
+            [
+                'icon' => '✓',
+                'title' => 'الحضور والغياب',
+                'description' => 'متابعة سجل الحضور',
+                'url' => 'student_attendance.php'
+            ],
+            [
+                'icon' => '✉',
+                'title' => 'الطلبات الجامعية',
+                'description' => 'متابعة طلباتك الجامعية',
+                'url' => 'student_requests.php'
+            ],
+            [
+                'icon' => '♧',
+                'title' => 'التنبيهات الأكاديمية',
+                'description' => 'عرض التنبيهات والإشعارات',
+                'url' => 'student_notifications.php'
+            ]
         ]
     ],
+
     'faculty' => [
         'title' => 'بوابة عضو هيئة التدريس',
         'description' => 'إدارة المقررات والأنشطة الأكاديمية ومتابعة أداء الطلاب.',
         'items' => [
-            ['icon' => '▦', 'title' => 'المقررات الدراسية', 'description' => 'متابعة المقررات المسندة إليك'],
-            ['icon' => '◷', 'title' => 'الجداول الدراسية', 'description' => 'عرض جداول المحاضرات'],
-            ['icon' => '✓', 'title' => 'إدارة الحضور', 'description' => 'متابعة حضور الطلاب'],
-            ['icon' => '▤', 'title' => 'الدرجات والتقييمات', 'description' => 'إدارة درجات الطلاب'],
-            ['icon' => '✎', 'title' => 'الواجبات والتكليفات', 'description' => 'إدارة الواجبات الأكاديمية'],
-            ['icon' => '♧', 'title' => 'الإعلانات والتنبيهات', 'description' => 'متابعة الإعلانات الأكاديمية']
+            [
+                'icon' => '▦',
+                'title' => 'المقررات الدراسية',
+                'description' => 'متابعة المقررات المسندة إليك',
+                'url' => 'faculty_courses.php'
+            ],
+            [
+                'icon' => '◷',
+                'title' => 'الجداول الدراسية',
+                'description' => 'عرض جداول المحاضرات ومواعيدها',
+                'url' => 'faculty_schedule.php'
+            ],
+            [
+                'icon' => '✓',
+                'title' => 'إدارة الحضور',
+                'description' => 'تسجيل حضور الطلاب ومتابعة الغياب',
+                'url' => 'faculty_attendance.php'
+            ],
+            [
+                'icon' => '▤',
+                'title' => 'الدرجات والتقييمات',
+                'description' => 'إدخال درجات الطلاب ومتابعة نتائجهم',
+                'url' => 'faculty_grades.php'
+            ],
+            [
+                'icon' => '✎',
+                'title' => 'الواجبات والتكليفات',
+                'description' => 'إضافة الواجبات وتعديلها ومتابعتها',
+                'url' => 'faculty_assignments.php'
+            ],
+            [
+                'icon' => '♧',
+                'title' => 'الإعلانات والتنبيهات',
+                'description' => 'إرسال الإعلانات والتنبيهات الأكاديمية للطلاب',
+                'url' => 'faculty_notifications.php'
+            ]
         ]
     ],
+
     'staff' => [
         'title' => 'بوابة الموظف',
         'description' => 'الوصول إلى الخدمات والمهام الإدارية الجامعية.',
         'items' => [
-            ['icon' => '▤', 'title' => 'الطلبات الجامعية', 'description' => 'متابعة الطلبات والمعاملات'],
-            ['icon' => '✉', 'title' => 'الإشعارات', 'description' => 'عرض الإشعارات الواردة'],
-            ['icon' => '▦', 'title' => 'الخدمات الجامعية', 'description' => 'متابعة الخدمات المتاحة'],
-            ['icon' => '◷', 'title' => 'المهام الإدارية', 'description' => 'متابعة الأعمال الإدارية']
+            [
+                'icon' => '▤',
+                'title' => 'الطلبات الجامعية',
+                'description' => 'متابعة الطلبات والمعاملات',
+                'url' => 'staff_requests.php'
+            ],
+            [
+                'icon' => '✉',
+                'title' => 'الإشعارات',
+                'description' => 'عرض الإشعارات الواردة',
+                'url' => 'staff_notifications.php'
+            ],
+            [
+                'icon' => '▦',
+                'title' => 'الخدمات الجامعية',
+                'description' => 'متابعة الخدمات المتاحة',
+                'url' => 'staff_services.php'
+            ],
+            [
+                'icon' => '◷',
+                'title' => 'المهام الإدارية',
+                'description' => 'إضافة المهام الإدارية ومتابعتها وتحديث حالتها',
+                'url' => 'staff_tasks.php'
+            ]
         ]
     ],
+
     'administrator' => [
         'title' => 'لوحة إدارة النظام',
         'description' => 'إدارة ومتابعة مختلف العمليات الأكاديمية والإدارية.',
         'items' => [
-            ['icon' => '♙', 'title' => 'إدارة المستخدمين', 'description' => 'إدارة حسابات وصلاحيات المستخدمين'],
-            ['icon' => '▦', 'title' => 'إدارة الطلاب', 'description' => 'متابعة بيانات الطلاب'],
-            ['icon' => '♧', 'title' => 'إدارة أعضاء هيئة التدريس', 'description' => 'متابعة بيانات أعضاء هيئة التدريس'],
-            ['icon' => '▤', 'title' => 'إدارة المقررات', 'description' => 'إدارة المقررات والتسجيل'],
-            ['icon' => '◷', 'title' => 'إدارة الجداول', 'description' => 'متابعة الجداول والقاعات'],
-            ['icon' => '✓', 'title' => 'الحضور والدرجات', 'description' => 'متابعة السجلات الأكاديمية'],
-            ['icon' => '✉', 'title' => 'الطلبات الجامعية', 'description' => 'متابعة الطلبات والمعاملات'],
-            ['icon' => '▥', 'title' => 'التقارير والإحصائيات', 'description' => 'عرض مؤشرات النظام']
+            [
+                'icon' => '♙',
+                'title' => 'إدارة المستخدمين',
+                'description' => 'إدارة حسابات وصلاحيات المستخدمين',
+                'url' => 'admin_users.php'
+            ],
+            [
+                'icon' => '▦',
+                'title' => 'إدارة الطلاب',
+                'description' => 'متابعة بيانات الطلاب',
+                'url' => 'admin_students.php'
+            ],
+            [
+                'icon' => '♧',
+                'title' => 'إدارة أعضاء هيئة التدريس',
+                'description' => 'متابعة بيانات أعضاء هيئة التدريس',
+                'url' => 'admin_faculty.php'
+            ],
+            [
+                'icon' => '▤',
+                'title' => 'إدارة المقررات',
+                'description' => 'إدارة المقررات والتسجيل',
+                'url' => 'admin_courses.php'
+            ],
+            [
+                'icon' => '◷',
+                'title' => 'إدارة الجداول',
+                'description' => 'متابعة الجداول والقاعات',
+                'url' => 'admin_schedules.php'
+            ],
+            [
+                'icon' => '✓',
+                'title' => 'الحضور والدرجات',
+                'description' => 'متابعة السجلات الأكاديمية',
+                'url' => 'admin_academics.php'
+            ],
+            [
+                'icon' => '✉',
+                'title' => 'الطلبات الجامعية',
+                'description' => 'متابعة الطلبات والمعاملات',
+                'url' => 'admin_requests.php'
+            ],
+            [
+                'icon' => '▥',
+                'title' => 'التقارير والإحصائيات',
+                'description' => 'عرض مؤشرات النظام',
+                'url' => 'admin_reports.php'
+            ]
         ]
     ]
 ];
@@ -217,13 +342,17 @@ $adminStats = [
 ];
 
 ?>
+
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
+
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#102c46">
+
 <title>لوحة التحكم | S-UCMS</title>
+
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&display=swap');
 
@@ -553,6 +682,18 @@ button {
     box-shadow: 0 7px 20px rgba(25,65,100,.06);
 }
 
+a.service-card {
+    display: block;
+    color: inherit;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+a.service-card:focus-visible {
+    outline: 3px solid var(--blue);
+    outline-offset: 3px;
+}
+
 .service-icon {
     width: 43px;
     height: 43px;
@@ -576,7 +717,6 @@ button {
     font-size: 10px;
     line-height: 1.9;
 }
-
 
 .student-schedule {
     background: white;
@@ -772,11 +912,13 @@ button {
 }
 </style>
 </head>
+
 <body>
 
 <div class="layout">
 
     <aside class="sidebar">
+
         <div class="brand">
             <div class="brand-icon">U</div>
             <div>
@@ -807,59 +949,84 @@ button {
                 <div class="avatar">
                     <?= htmlspecialchars(mb_substr($fullName, 0, 1, 'UTF-8'), ENT_QUOTES, 'UTF-8') ?>
                 </div>
+
                 <div>
                     <div class="sidebar-user-name">
                         <?= htmlspecialchars($fullName, ENT_QUOTES, 'UTF-8') ?>
                     </div>
+
                     <div class="sidebar-user-role">
                         <?= htmlspecialchars($roleName, ENT_QUOTES, 'UTF-8') ?>
                     </div>
                 </div>
             </div>
         </div>
+
     </aside>
 
     <main class="main">
 
         <header class="topbar">
+
             <div>
-                <div class="topbar-title"><?= htmlspecialchars($content['title'], ENT_QUOTES, 'UTF-8') ?></div>
-                <div class="topbar-subtitle">نظام إدارة الحرم الجامعي الذكي المتكامل</div>
+                <div class="topbar-title">
+                    <?= htmlspecialchars($content['title'], ENT_QUOTES, 'UTF-8') ?>
+                </div>
+
+                <div class="topbar-subtitle">
+                    نظام إدارة الحرم الجامعي الذكي المتكامل
+                </div>
             </div>
 
             <div class="topbar-left">
+
                 <div class="date">
                     <?= date('Y/m/d') ?>
                 </div>
 
                 <form method="POST" action="">
-                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
+                    <input type="hidden" name="csrf_token"
+                           value="<?= htmlspecialchars($_SESSION['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
+
                     <button type="submit" name="logout" value="1" class="logout-button">
                         تسجيل الخروج
                     </button>
                 </form>
+
             </div>
         </header>
 
         <div class="content" id="overview">
 
             <section class="welcome">
+
                 <div>
                     <div class="welcome-label">النظام الجامعي الذكي المتكامل</div>
-                    <h1>مرحبا، <?= htmlspecialchars($fullName, ENT_QUOTES, 'UTF-8') ?></h1>
-                    <p><?= htmlspecialchars($content['description'], ENT_QUOTES, 'UTF-8') ?></p>
+
+                    <h1>
+                        مرحبا، <?= htmlspecialchars($fullName, ENT_QUOTES, 'UTF-8') ?>
+                    </h1>
+
+                    <p>
+                        <?= htmlspecialchars($content['description'], ENT_QUOTES, 'UTF-8') ?>
+                    </p>
                 </div>
+
                 <div class="welcome-symbol">U</div>
+
             </section>
 
             <?php if ($role === 'student'): ?>
+
                 <section class="student-schedule" id="student-schedule">
+
                     <div class="section-heading" style="margin-top: 0;">
                         <h2>الجدول الدراسي</h2>
                         <span><?= count($studentSchedule) ?> محاضرات</span>
                     </div>
 
                     <?php if (!empty($studentSchedule)): ?>
+
                         <div class="schedule-term">
                             <?= htmlspecialchars($studentSchedule[0]['semester'], ENT_QUOTES, 'UTF-8') ?>
                             -
@@ -867,7 +1034,9 @@ button {
                         </div>
 
                         <div class="schedule-scroll">
+
                             <table class="schedule-table">
+
                                 <thead>
                                     <tr>
                                         <th>المقرر</th>
@@ -878,35 +1047,63 @@ button {
                                         <th>القاعة</th>
                                     </tr>
                                 </thead>
+
                                 <tbody>
+
                                     <?php foreach ($studentSchedule as $lesson): ?>
+
                                         <tr>
+
                                             <td>
                                                 <?= htmlspecialchars($lesson['course_code'], ENT_QUOTES, 'UTF-8') ?>
                                                 -
                                                 <?= htmlspecialchars($lesson['course_name'], ENT_QUOTES, 'UTF-8') ?>
                                             </td>
-                                            <td><?= htmlspecialchars($lesson['faculty_name'], ENT_QUOTES, 'UTF-8') ?></td>
-                                            <td><?= htmlspecialchars($lesson['day_of_week'], ENT_QUOTES, 'UTF-8') ?></td>
-                                            <td><?= htmlspecialchars(substr($lesson['start_time'], 0, 5), ENT_QUOTES, 'UTF-8') ?></td>
-                                            <td><?= htmlspecialchars(substr($lesson['end_time'], 0, 5), ENT_QUOTES, 'UTF-8') ?></td>
+
+                                            <td>
+                                                <?= htmlspecialchars($lesson['faculty_name'], ENT_QUOTES, 'UTF-8') ?>
+                                            </td>
+
+                                            <td>
+                                                <?= htmlspecialchars($lesson['day_of_week'], ENT_QUOTES, 'UTF-8') ?>
+                                            </td>
+
+                                            <td>
+                                                <?= htmlspecialchars(substr($lesson['start_time'], 0, 5), ENT_QUOTES, 'UTF-8') ?>
+                                            </td>
+
+                                            <td>
+                                                <?= htmlspecialchars(substr($lesson['end_time'], 0, 5), ENT_QUOTES, 'UTF-8') ?>
+                                            </td>
+
                                             <td>
                                                 <?= htmlspecialchars($lesson['room_code'], ENT_QUOTES, 'UTF-8') ?>
+
                                                 <?php if (!empty($lesson['building'])): ?>
                                                     - <?= htmlspecialchars($lesson['building'], ENT_QUOTES, 'UTF-8') ?>
                                                 <?php endif; ?>
                                             </td>
+
                                         </tr>
+
                                     <?php endforeach; ?>
+
                                 </tbody>
+
                             </table>
+
                         </div>
+
                     <?php else: ?>
+
                         <div class="schedule-empty">
                             لا يوجد جدول دراسي لعرضه حاليا. تأكد من تسجيلك في المقرر وربط المقرر بجدول دراسي للفصل نفسه.
                         </div>
+
                     <?php endif; ?>
+
                 </section>
+
             <?php endif; ?>
 
             <?php if ($role === 'administrator'): ?>
@@ -917,51 +1114,120 @@ button {
                 </div>
 
                 <section class="stats-grid">
+
                     <?php foreach ($adminStats as $stat): ?>
+
                         <div class="stat-card">
-                            <div class="stat-icon"><?= $stat['icon'] ?></div>
-                            <div class="stat-value"><?= number_format($stat['value']) ?></div>
-                            <div class="stat-label"><?= htmlspecialchars($stat['label'], ENT_QUOTES, 'UTF-8') ?></div>
+
+                            <div class="stat-icon">
+                                <?= $stat['icon'] ?>
+                            </div>
+
+                            <div class="stat-value">
+                                <?= number_format($stat['value']) ?>
+                            </div>
+
+                            <div class="stat-label">
+                                <?= htmlspecialchars($stat['label'], ENT_QUOTES, 'UTF-8') ?>
+                            </div>
+
                         </div>
+
                     <?php endforeach; ?>
+
                 </section>
 
             <?php endif; ?>
 
             <div class="section-heading" id="services">
+
                 <h2>الخدمات والأنظمة</h2>
-                <span><?= count($content['items']) ?> خدمات</span>
+
+                <span>
+                    <?= count($content['items']) ?> خدمات
+                </span>
+
             </div>
 
             <section class="services-grid">
+
                 <?php foreach ($content['items'] as $item): ?>
-                    <article class="service-card">
-                        <div class="service-icon"><?= $item['icon'] ?></div>
-                        <h3><?= htmlspecialchars($item['title'], ENT_QUOTES, 'UTF-8') ?></h3>
-                        <p><?= htmlspecialchars($item['description'], ENT_QUOTES, 'UTF-8') ?></p>
-                    </article>
+
+                    <?php if (!empty($item['url'])): ?>
+
+                        <a href="<?= htmlspecialchars($item['url'], ENT_QUOTES, 'UTF-8') ?>"
+                           class="service-card">
+
+                            <div class="service-icon">
+                                <?= $item['icon'] ?>
+                            </div>
+
+                            <h3>
+                                <?= htmlspecialchars($item['title'], ENT_QUOTES, 'UTF-8') ?>
+                            </h3>
+
+                            <p>
+                                <?= htmlspecialchars($item['description'], ENT_QUOTES, 'UTF-8') ?>
+                            </p>
+
+                        </a>
+
+                    <?php else: ?>
+
+                        <article class="service-card">
+
+                            <div class="service-icon">
+                                <?= $item['icon'] ?>
+                            </div>
+
+                            <h3>
+                                <?= htmlspecialchars($item['title'], ENT_QUOTES, 'UTF-8') ?>
+                            </h3>
+
+                            <p>
+                                <?= htmlspecialchars($item['description'], ENT_QUOTES, 'UTF-8') ?>
+                            </p>
+
+                        </article>
+
+                    <?php endif; ?>
+
                 <?php endforeach; ?>
+
             </section>
 
             <section class="profile-card" id="profile">
+
                 <h3>معلومات الحساب</h3>
 
                 <div class="profile-details">
+
                     <div class="profile-item">
                         <span>الاسم الكامل</span>
-                        <strong><?= htmlspecialchars($fullName, ENT_QUOTES, 'UTF-8') ?></strong>
+
+                        <strong>
+                            <?= htmlspecialchars($fullName, ENT_QUOTES, 'UTF-8') ?>
+                        </strong>
                     </div>
 
                     <div class="profile-item">
                         <span>البريد الإلكتروني</span>
-                        <strong><?= htmlspecialchars($email, ENT_QUOTES, 'UTF-8') ?></strong>
+
+                        <strong>
+                            <?= htmlspecialchars($email, ENT_QUOTES, 'UTF-8') ?>
+                        </strong>
                     </div>
 
                     <div class="profile-item">
                         <span>نوع الحساب</span>
-                        <strong><?= htmlspecialchars($roleName, ENT_QUOTES, 'UTF-8') ?></strong>
+
+                        <strong>
+                            <?= htmlspecialchars($roleName, ENT_QUOTES, 'UTF-8') ?>
+                        </strong>
                     </div>
+
                 </div>
+
             </section>
 
             <footer class="footer">
@@ -969,9 +1235,10 @@ button {
             </footer>
 
         </div>
+
     </main>
+
 </div>
 
 </body>
 </html>
-                       
