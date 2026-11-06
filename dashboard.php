@@ -836,8 +836,27 @@ a.service-card:focus-visible {
         border: 0;
     }
 
-    .sidebar .side-label,
-    .sidebar .side-link,
+    .sidebar {
+        display: block;
+        padding: 13px 15px 12px;
+        overflow-x: auto;
+    }
+
+    .sidebar .side-label {
+        display: block;
+        margin: 10px 5px 8px;
+    }
+
+    .sidebar .side-link {
+        display: inline-flex;
+        align-items: center;
+        width: auto;
+        margin: 0 0 5px 4px;
+        padding: 9px 11px;
+        white-space: nowrap;
+        font-size: 11px;
+    }
+
     .sidebar-bottom {
         display: none;
     }
@@ -942,6 +961,11 @@ a.service-card:focus-visible {
         <a href="#profile" class="side-link">
             <span class="side-icon">♙</span>
             <span>الملف الشخصي</span>
+        </a>
+
+        <a href="change_password.php" class="side-link">
+            <span class="side-icon">🔒</span>
+            <span>تغيير كلمة المرور</span>
         </a>
 
         <div class="sidebar-bottom">
