@@ -35,6 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $studentNumber = trim($_POST['student_number'] ?? '');
             $department = trim($_POST['department'] ?? '');
             $level = trim($_POST['academic_level'] ?? '');
+            $collegeType = $_POST['college_type'] ?? 'general';
             $status = $_POST['status'] ?? 'active';
 
             if ($name === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -47,6 +48,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($studentNumber === '' || $department === '' || $level === '') {
                 throw new Exception('يرجى إكمال جميع البيانات الأكاديمية.');
+            }
+
+            if (!in_array($collegeType, ['general', 'health'], true)) {
+                throw new Exception('نوع الكلية غير صحيح.');
+            }
+
+            if (!in_array($collegeType, ['general', 'health'], true)) {
+                throw new Exception('نوع الكلية غير صحيح.');
             }
 
             if (!in_array($status, ['active', 'inactive'], true)) {
@@ -73,15 +82,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $stmt = $pdo->prepare("
                 INSERT INTO students
-                (user_id, student_number, department, academic_level)
-                VALUES (?, ?, ?, ?)
+                (user_id, student_number, department, academic_level, college_type)
+                VALUES (?, ?, ?, ?, ?)
             ");
 
             $stmt->execute([
                 $newUserId,
                 $studentNumber,
                 $department,
-                $level
+                $level,
+                $collegeType
             ]);
 
             $pdo->commit();
@@ -96,6 +106,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $studentNumber = trim($_POST['student_number'] ?? '');
             $department = trim($_POST['department'] ?? '');
             $level = trim($_POST['academic_level'] ?? '');
+            $collegeType = $_POST['college_type'] ?? 'general';
             $password = $_POST['password'] ?? '';
 
             if ($studentId <= 0 || $name === '' ||
@@ -144,7 +155,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $stmt = $pdo->prepare("
                 UPDATE students
-                SET student_number = ?, department = ?, academic_level = ?
+                SET student_number = ?, department = ?, academic_level = ?, college_type = ?
                 WHERE user_id = ?
             ");
 
@@ -152,6 +163,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $studentNumber,
                 $department,
                 $level,
+                $collegeType,
                 $studentId
             ]);
 
@@ -207,6 +219,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $search = trim($_GET['search'] ?? '');
 $departmentFilter = trim($_GET['department'] ?? '');
 $levelFilter = trim($_GET['level'] ?? '');
+$collegeTypeFilter = $_GET['college_type'] ?? '';
 $statusFilter = $_GET['status'] ?? '';
 
 $sql = "
@@ -219,7 +232,8 @@ $sql = "
         u.created_at,
         s.student_number,
         s.department,
-        s.academic_level
+        s.academic_level,
+        s.college_type
     FROM students s
     INNER JOIN users u ON u.id = s.user_id
     WHERE u.role = 'student'
@@ -249,6 +263,11 @@ if ($departmentFilter !== '') {
 if ($levelFilter !== '') {
     $sql .= " AND s.academic_level = ?";
     $params[] = $levelFilter;
+}
+
+if (in_array($collegeTypeFilter, ['general', 'health'], true)) {
+    $sql .= " AND s.college_type = ?";
+    $params[] = $collegeTypeFilter;
 }
 
 if (in_array($statusFilter, ['active', 'inactive'], true)) {
@@ -306,7 +325,8 @@ if (isset($_GET['edit'])) {
             u.status,
             s.student_number,
             s.department,
-            s.academic_level
+            s.academic_level,
+            s.college_type
         FROM students s
         INNER JOIN users u ON u.id = s.user_id
         WHERE u.id = ? AND u.role = 'student'
@@ -689,6 +709,14 @@ function e($value) {
                         value="<?= e($editStudent['academic_level'] ?? '') ?>">
                 </div>
 
+                <div class="field">
+                    <label>نوع الكلية</label>
+                    <select name="college_type" required>
+                        <option value="general" <?= ($editStudent['college_type'] ?? 'general') === 'general' ? 'selected' : '' ?>>كلية عامة</option>
+                        <option value="health" <?= ($editStudent['college_type'] ?? 'general') === 'health' ? 'selected' : '' ?>>كلية صحية</option>
+                    </select>
+                </div>
+
                 <?php if (!$editStudent): ?>
                     <div class="field">
                         <label>كلمة المرور</label>
@@ -758,6 +786,12 @@ function e($value) {
                 <?php endforeach; ?>
             </select>
 
+            <select name="college_type">
+                <option value="">جميع أنواع الكليات</option>
+                <option value="general" <?= $collegeTypeFilter === 'general' ? 'selected' : '' ?>>كلية عامة</option>
+                <option value="health" <?= $collegeTypeFilter === 'health' ? 'selected' : '' ?>>كلية صحية</option>
+            </select>
+
             <select name="status">
                 <option value="">جميع الحالات</option>
                 <option value="active" <?= $statusFilter === 'active' ? 'selected' : '' ?>>
@@ -784,6 +818,7 @@ function e($value) {
                         <th>رقم الهاتف</th>
                         <th>القسم</th>
                         <th>المستوى</th>
+                        <th>نوع الكلية</th>
                         <th>الحالة</th>
                         <th>الإجراءات</th>
                     </tr>
@@ -809,6 +844,8 @@ function e($value) {
                             <td><?= e($student['department']) ?></td>
 
                             <td><?= e($student['academic_level']) ?></td>
+
+                            <td><?= ($student['college_type'] ?? 'general') === 'health' ? 'كلية صحية' : 'كلية عامة' ?></td>
 
                             <td>
                                 <span class="badge <?= e($student['status']) ?>">
@@ -855,7 +892,7 @@ function e($value) {
                 <?php else: ?>
 
                     <tr>
-                        <td colspan="9" class="empty">
+                        <td colspan="10" class="empty">
                             لا توجد بيانات طلاب مطابقة.
                         </td>
                     </tr>

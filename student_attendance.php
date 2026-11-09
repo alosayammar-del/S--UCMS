@@ -61,11 +61,15 @@ foreach ($records as $record) {
     }
 }
 
-$totalRecords = count($records);
+// حساب نسبة الحضور مع استبعاد الغياب بعذر
 $attended = $stats['present'] + $stats['late'];
 
-$attendancePercentage = $totalRecords > 0
-    ? round(($attended / $totalRecords) * 100, 2)
+$countedRecords = $stats['present']
+    + $stats['absent']
+    + $stats['late'];
+
+$attendancePercentage = $countedRecords > 0
+    ? round(($attended / $countedRecords) * 100, 2)
     : 0;
 
 function e($value) {
@@ -248,7 +252,7 @@ function statusText($status) {
 
             <div class="error"><?= e($error) ?></div>
 
-        <?php elseif ($totalRecords > 0): ?>
+<?php elseif (!empty($records)): ?>
 
             <div class="stats">
 

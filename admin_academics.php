@@ -1,4 +1,4 @@
-<?php
+?php
 session_start();
 
 require_once __DIR__ . '/config/database.php';
@@ -18,7 +18,7 @@ $selectedCourse = isset($_GET['course_id']) ? (int) $_GET['course_id'] : 0;
 $selectedStudent = isset($_GET['student_id']) ? (int) $_GET['student_id'] : 0;
 $activeTab = $_GET['tab'] ?? 'attendance';
 
-if (!in_array($activeTab, ['attendance', 'grades'], true)) {
+if (!in_array($activeTab, ['attendance', 'grades', 'warnings'], true)) {
     $activeTab = 'attendance';
 }
 
@@ -67,6 +67,17 @@ try {
                 END
             ) AS average_percentage
         FROM grades
+    ")->fetch(PDO::FETCH_ASSOC);
+
+    // إحصائيات الإنذار المبكر
+    $warningStats = $pdo->query("
+        SELECT
+            COUNT(*) AS total_warnings,
+            SUM(CASE WHEN risk_level = 'satisfactory' THEN 1 ELSE 0 END) AS satisfactory_count,
+            SUM(CASE WHEN risk_level = 'needs_improvement' THEN 1 ELSE 0 END) AS improvement_count,
+            SUM(CASE WHEN risk_level = 'critical_risk' THEN 1 ELSE 0 END) AS critical_count,
+            SUM(CASE WHEN late_count >= 3 THEN 1 ELSE 0 END) AS repeated_late_count
+        FROM attendance_early_warnings
     ")->fetch(PDO::FETCH_ASSOC);
 
     // سجلات الحضور
@@ -144,6 +155,57 @@ try {
     $gradesStmt->execute($gradesParams);
     $gradeRecords = $gradesStmt->fetchAll(PDO::FETCH_ASSOC);
 
+    // سجلات الإنذار المبكر
+    $warningsSql = "
+        SELECT
+            w.id,
+            w.enrollment_id,
+            w.counted_sessions,
+            w.absent_count,
+            w.late_count,
+            w.absence_percentage,
+            w.risk_level,
+            w.details,
+            w.updated_at,
+            u.full_name,
+            st.student_number,
+            c.course_code,
+            c.course_name
+        FROM attendance_early_warnings w
+        INNER JOIN enrollments e ON e.id = w.enrollment_id
+        INNER JOIN students st ON st.user_id = w.student_id
+        INNER JOIN users u ON u.id = st.user_id
+        INNER JOIN courses c ON c.id = w.course_id
+        WHERE 1 = 1
+    ";
+
+    $warningsParams = [];
+
+    if ($selectedCourse > 0) {
+        $warningsSql .= " AND w.course_id = ?";
+        $warningsParams[] = $selectedCourse;
+    }
+
+    if ($selectedStudent > 0) {
+        $warningsSql .= " AND w.student_id = ?";
+        $warningsParams[] = $selectedStudent;
+    }
+
+    $warningsSql .= "
+        ORDER BY
+            CASE w.risk_level
+                WHEN 'critical_risk' THEN 1
+                WHEN 'needs_improvement' THEN 2
+                ELSE 3
+            END,
+            w.updated_at DESC
+        LIMIT 300
+    ";
+
+    $warningsStmt = $pdo->prepare($warningsSql);
+    $warningsStmt->execute($warningsParams);
+    $warningRecords = $warningsStmt->fetchAll(PDO::FETCH_ASSOC);
+
 } catch (PDOException $e) {
     die('حدث خطأ أثناء تحميل البيانات: ' . htmlspecialchars($e->getMessage()));
 }
@@ -185,6 +247,28 @@ function gradeTypeLabel($type)
     ];
 
     return $labels[$type] ?? $type;
+}
+
+function riskLevelLabel($level)
+{
+    $labels = [
+        'satisfactory' => 'مستقر',
+        'needs_improvement' => 'يحتاج إلى تحسين',
+        'critical_risk' => 'خطورة مرتفعة'
+    ];
+
+    return $labels[$level] ?? $level;
+}
+
+function riskLevelClass($level)
+{
+    $classes = [
+        'satisfactory' => 'success',
+        'needs_improvement' => 'warning',
+        'critical_risk' => 'danger'
+    ];
+
+    return $classes[$level] ?? 'secondary';
 }
 
 function h($value)
@@ -366,6 +450,7 @@ function h($value)
             text-align: right;
             border-bottom: 1px solid #edf0f5;
             font-size: 13px;
+            vertical-align: middle;
         }
 
         th {
@@ -407,10 +492,28 @@ function h($value)
             background: #e9edf2;
         }
 
+        .details {
+            min-width: 260px;
+            max-width: 420px;
+            line-height: 1.8;
+            white-space: normal;
+        }
+
         .empty {
             text-align: center;
             padding: 30px;
             color: #718096;
+        }
+
+        .note {
+            background: #f5f7fb;
+            border-right: 4px solid #244d7c;
+            padding: 13px 15px;
+            border-radius: 6px;
+            line-height: 1.8;
+            color: #526078;
+            margin-bottom: 18px;
+            font-size: 13px;
         }
 
         @media (max-width: 600px) {
@@ -437,7 +540,7 @@ function h($value)
     <div class="header">
         <h1>متابعة الحضور والدرجات</h1>
         <p class="subtitle">
-            متابعة سجلات حضور الطلاب ودرجاتهم الأكاديمية في جميع المقررات.
+            متابعة سجلات حضور الطلاب ودرجاتهم الأكاديمية ومؤشرات الإنذار المبكر.
         </p>
         <a class="back-link" href="dashboard.php">العودة إلى لوحة التحكم</a>
     </div>
@@ -473,6 +576,39 @@ function h($value)
             </strong>
         </div>
 
+    </div>
+
+    <div class="panel">
+        <h2>إحصائيات الإنذار المبكر</h2>
+
+        <div class="stats">
+
+            <div class="stat-card">
+                <span>إجمالي سجلات المؤشرات</span>
+                <strong><?= (int)($warningStats['total_warnings'] ?? 0) ?></strong>
+            </div>
+
+            <div class="stat-card">
+                <span>مستقر</span>
+                <strong><?= (int)($warningStats['satisfactory_count'] ?? 0) ?></strong>
+            </div>
+
+            <div class="stat-card">
+                <span>يحتاج إلى تحسين</span>
+                <strong><?= (int)($warningStats['improvement_count'] ?? 0) ?></strong>
+            </div>
+
+            <div class="stat-card">
+                <span>خطورة مرتفعة</span>
+                <strong><?= (int)($warningStats['critical_count'] ?? 0) ?></strong>
+            </div>
+
+            <div class="stat-card">
+                <span>تنبيهات التأخير المتكرر</span>
+                <strong><?= (int)($warningStats['repeated_late_count'] ?? 0) ?></strong>
+            </div>
+
+        </div>
     </div>
 
     <div class="panel">
@@ -520,6 +656,7 @@ function h($value)
     <div class="panel">
 
         <div class="tabs">
+
             <a class="tab <?= $activeTab === 'attendance' ? 'active' : '' ?>"
                href="?tab=attendance&course_id=<?= $selectedCourse ?>&student_id=<?= $selectedStudent ?>">
                 سجلات الحضور
@@ -529,6 +666,12 @@ function h($value)
                href="?tab=grades&course_id=<?= $selectedCourse ?>&student_id=<?= $selectedStudent ?>">
                 سجلات الدرجات
             </a>
+
+            <a class="tab <?= $activeTab === 'warnings' ? 'active' : '' ?>"
+               href="?tab=warnings&course_id=<?= $selectedCourse ?>&student_id=<?= $selectedStudent ?>">
+                الإنذار المبكر
+            </a>
+
         </div>
 
         <?php if ($activeTab === 'attendance'): ?>
@@ -577,7 +720,7 @@ function h($value)
                 </table>
             </div>
 
-        <?php else: ?>
+        <?php elseif ($activeTab === 'grades'): ?>
 
             <h2>سجلات درجات الطلاب</h2>
 
@@ -626,6 +769,75 @@ function h($value)
                                         : '—' ?>
                                 </td>
                                 <td><?= h($record['assessment_date']) ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+
+        <?php else: ?>
+
+            <h2>مؤشرات الإنذار المبكر للطلاب</h2>
+
+            <div class="note">
+                يعتمد هذا القسم على مؤشرات الحضور المسجلة لكل طالب في كل مقرر.
+                يتم احتساب الغياب دون التأخير، كما يستبعد الغياب بعذر من الحساب.
+                ويظهر التأخير المتكرر بوصفه تنبيها مستقلا.
+            </div>
+
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                    <tr>
+                        <th>الطالب</th>
+                        <th>الرقم الجامعي</th>
+                        <th>المقرر</th>
+                        <th>المحاضرات المحتسبة</th>
+                        <th>عدد الغيابات</th>
+                        <th>عدد التأخيرات</th>
+                        <th>نسبة الغياب</th>
+                        <th>مستوى الخطورة</th>
+                        <th>تفاصيل التنبيه</th>
+                        <th>آخر تحديث</th>
+                    </tr>
+                    </thead>
+
+                    <tbody>
+                    <?php if (empty($warningRecords)): ?>
+                        <tr>
+                            <td colspan="10" class="empty">
+                                لا توجد مؤشرات إنذار مبكر مطابقة لخيارات البحث.
+                            </td>
+                        </tr>
+                    <?php else: ?>
+                        <?php foreach ($warningRecords as $record): ?>
+                            <tr>
+                                <td><?= h($record['full_name']) ?></td>
+                                <td><?= h($record['student_number']) ?></td>
+                                <td>
+                                    <?= h($record['course_code'] . ' - ' . $record['course_name']) ?>
+                                </td>
+                                <td><?= (int)$record['counted_sessions'] ?></td>
+                                <td><?= (int)$record['absent_count'] ?></td>
+                                <td><?= (int)$record['late_count'] ?></td>
+                                <td>
+                                    <?= number_format((float)$record['absence_percentage'], 2) ?>%
+                                </td>
+                                <td>
+                                    <span class="badge <?= h(riskLevelClass($record['risk_level'])) ?>">
+                                        <?= h(riskLevelLabel($record['risk_level'])) ?>
+                                    </span>
+
+                                    <?php if ((int)$record['late_count'] >= 3): ?>
+                                        <br>
+                                        <span class="badge warning" style="margin-top:6px;">
+                                            تأخير متكرر
+                                        </span>
+                                    <?php endif; ?>
+                                </td>
+                                <td class="details"><?= h($record['details']) ?: '—' ?></td>
+                                <td><?= h($record['updated_at']) ?></td>
                             </tr>
                         <?php endforeach; ?>
                     <?php endif; ?>
